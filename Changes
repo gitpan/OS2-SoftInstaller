@@ -15,3 +15,20 @@ Revision history for Perl extension OS2::SoftInstaller.
 	Add an object for CPAN getter.
 	Path for .inf file corrected.
 	plINSTAL.zip autocreated.
+
+0.05
+	Corrected a duplicated id.
+	plINSTALL was written to a wrong dir.
+0.06
+	Better sizes, install testperl.cmd too, patches.zip.
+	Moved .a libraries from site-specific to build-specific archive.
+	echo on in .cmd file.
+
+	Updated to 5.005 style of directory layout.  edit_cfg.pl
+	prompts on successful exit.
+	
+0.07
+	Had F:/perllib hardwired instead of f:/perllib.
+	Un-hardwire $shelldrive and $perllibdir.
+	Maybe will be able to remove tmp working dir.
+	A lot of error detection/report added to edit_cfg.cmd

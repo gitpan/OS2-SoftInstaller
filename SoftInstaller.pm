@@ -13,7 +13,7 @@ require Exporter;
 	     make_pkg
 	     size_date_time_pkg
 	    );
-$VERSION = '0.04';
+$VERSION = '0.07';
 
 
 # Preloaded methods go here.
