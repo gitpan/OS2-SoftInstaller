@@ -13,7 +13,7 @@ require Exporter;
 	     make_pkg
 	     size_date_time_pkg
 	    );
-$VERSION = '0.07';
+$VERSION = '0.09';
 
 
 # Preloaded methods go here.
@@ -25,7 +25,7 @@ sub size_date_time_pkg {
     my $file = shift;
     my $time = $^T - 24 * 60 * 60 * (-M $file) ;
     my ($sec,$min,$hour,$mday,$mon,$year,$wday,$yday,$isdst) = localtime $time;
-    my $yy = sprintf('%02d', $year);
+    my $yy = sprintf('%02d', $year%100);
     my $mm = sprintf('%02d', $mon + 1);
     my $dd = sprintf('%02d', $mday);
     my $hh = sprintf('%02d', $hour);

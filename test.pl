@@ -21,27 +21,45 @@ print "ok 1\n";
 # This is site config info:
 
 use Config '%Config';
+use File::Find;
+use File::Path;
+use strict;
 
-$script_exe_dir = 'f:/emx.add/bin'; # Used to find scripts to ship only
-$bookdir = 'f:/book';		# Used to find Perl.inf only
+sub hard_rm {
+  my $f = shift;
+  chmod 0666, $f;
+  unlink $f;
+}
+
+sub hard_rm_recursive {			# Keeps the directories...
+  rmtree([@_], 0, 0);			# No message, remove read-only too
+}
+
+my $lwp_out = `lwp-download --help 2>&1`;
+(my $lwp_loc = $lwp_out) =~ s/\s.+//s;
+$lwp_loc =~ s,\\,/,g;
+$lwp_loc =~ s,(.*)/.*,$1,;
+
+
+my $script_exe_dir = $lwp_loc; # Used to find scripts to ship only
+my @bookdir = grep -f "$_/perl.inf", split /;/, $ENV{BOOKSHELF};
+warn "Did not find Perl.INF on BOOKSHELF" unless @bookdir;
+warn "Many copies of Perl.INF on BOOKSHELF: @bookdir" if @bookdir > 1;
+my @bookfiles = map "$_/perl.inf", @bookdir;
+
 #$prefix = 'f:/perllib';
-$prefix = $Config{prefix};
-$emxdir = 'F:/emx';		# Used as default install only
+my $prefix = $Config{prefix};
+my $emxdir = $Config{libc};		# Used as default install only
+$emxdir =~ s,([^/]+/[^/]+).*,$1,;
 #$shelldrive = 'F:';
-$shelldrive = $Config{sh};
+my $shelldrive = $Config{sh};
 $shelldrive =~ s,/.*,,;
 
 use Cwd 'cwd';
 use File::Basename;
 use File::Path;
 
-# This logic is from Perls ./os2/Makefile.SHs
-$perl_version="5.00$Config{PATCHLEVEL}_$Config{SUBVERSION}";
-$perl_version="$perl_version\-threaded" if $Config{archname} =~ /-thread/;
-$dllcode = `echo $perl_version | sum | awk '{print \$1}'`;
-chomp $dllcode;
-$dllcode = uc sprintf '%x', $dllcode;
-$dllname = "perl$dllcode";
+my $dllname = OS2::DLLname(1);
 print STDERR "I think that name of Perl DLL is $dllname.dll.\n";
 
 my %zip = ( pods => 'perl_pod.zip',
@@ -82,7 +100,7 @@ sub zip {
   system 'zip', @_ and die "zip error exit $?";
 }
 
-$perllibdir = "$prefix/lib";
+my $perllibdir = "$prefix/lib";
 my $rel_configpm = substr $INC{'Config.pm'}, 1 + length $perllibdir;
 
 my $tmp = $ENV{TMP} || $ENV{TEMP} || '/tmp';
@@ -97,22 +115,22 @@ my $tmpdirroot;
 #mkdir $tmpdir1, 0777 or die "mkdir1: $!";
 
 
-$tmpdir1 = cwd . "/dist";
+my $tmpdir1 = cwd . "/dist";
 mkdir $tmpdir1, 0777 or die "mkdir1: $!" unless -d $tmpdir1;
 
 END {
   # chdir $tmpdir1;		# Out of $tmpdir1
   chdir $tmpdirroot;		# Out of $tmpdir1 (But the same drive!)
   print STDERR "Removing '$tmpdir'.\n";
-  system 'rm', '-rf', $tmpdir;
+  hard_rm_recursive $tmpdir;
 }
 
 die "Panic: toplibdir '$perllibdir' not a substring of privlib '$Config{privlib}'"
   unless lc $perllibdir eq lc substr $Config{privlib}, 0, length $perllibdir;
 
 # These two start with '/' unless empty
-$privlibtail = substr $Config{privlib}, length $perllibdir;
-$sitelibtail = substr $Config{sitelib}, length "$perllibdir/site_perl";
+my $privlibtail = substr $Config{privlib}, length $perllibdir;
+my $sitelibtail = substr $Config{sitelib}, length "$perllibdir/site_perl";
 
 File::Copy::syscopy $Config{privlib}, "$tmpdir$privlibtail" or die "copy: $!";
 
@@ -123,26 +141,27 @@ if (length $privlibtail) {
 
 chdir $tmpdir or die "cd: $!";
 
-$podsubdir = (length $privlibtail
+my $podsubdir = (length $privlibtail
 	      ? ((substr $privlibtail, 1). "/pod") 
 	      : 'pod');
-$predir = cwd;
-chdir $podsubdir or die "cd: $!";
-zip '-rmu', "$tmpdir1/$zip{pods}", "*.pod";
+my $predir = cwd;
+chdir "$podsubdir" or die "cd: $!";
+zip '-ru', "$tmpdir1/$zip{pods}", "*.pod";
+# find sub {hard_rm $_ if /\.pod$/}, '.';
+hard_rm $_ for <*.pod>;
 chdir $predir or die "cd: $!";
+
 # Should not do this, there are some .pm files there...
 #system 'rm', '-rf', "pod" and die "rm: $?, $!";
 
-$core = "$Config{archlib}/CORE";
+my $core = "$Config{archlib}/CORE";
 $core = substr $core, (length $perllibdir) + 1;
 zip '-ru', "$tmpdir1/$zip{binr_lib}", $core;
 zip '-ru', "$tmpdir1/$zip{binr_lib}", 
   '.', '-i', '*.a', '*.lib', '*.ld', '*.all';
-system 'rm', '-rf', $core and die "rm: $?, $!";
+hard_rm_recursive $core;
 
-use File::Find 'find';
-
-@found = ();
+my @found = ();
 
 find sub {
   push @found, $File::Find::name if /\.(a|lib|rej|orig|ld|all)$/i;
@@ -155,11 +174,11 @@ unlink @found or die "unlink: $!";
 chdir 'site_perl' or die "cd: $!";
 zip '-ru', "$tmpdir1/$zip{site_lib}", "*";
 chdir '..' or die "cd: $!";
-system 'rm', '-rf', "site_perl" and die "rm: $?, $!";
+hard_rm_recursive "site_perl";
 
 zip '-ru', "$tmpdir1/$zip{main_lib}", '.', '-x', 'CPAN/Config.pm';
 chdir '..' or die "cd: $!";
-system 'rm', '-rf', "pl.$$/*" and die "rm: $?, $!";
+hard_rm_recursive <pl.$$/*>;
 
 #chdir substr $perllibdir, 0, length($perllibdir) - 4;	# /lib
 chdir "$prefix/man" or die "cd: $!";
@@ -167,13 +186,13 @@ zip '-ru', "$tmpdir1/$zip{man_main}", 'man1';
 zip '-ru', "$tmpdir1/$zip{man_modl}", 'man3';
 
 chdir '../bin' or die "cd: $!";
-@found = qw(pod2ipf pod2texi testperl);
+@found = qw(pod2ipf pod2texi testperl pfind);
 
 find sub {
   push @found, $File::Find::name unless /\./;
 }, '.';
 
-@scripts = map "$_.cmd", @found;
+my @scripts = map { s/\.pl$//i; "$_.cmd"} @found;
 zip '-u', "$tmpdir1/$zip{utilits}", '*.exe', '-x', 'perl.exe';
 
 chdir '..' or die "cd: $!";
@@ -184,18 +203,19 @@ zip '-ru', "$tmpdir1/$zip{readme}", 'README.os2', 'Changes.os2';
 zip '-ru', "$tmpdir1/$zip{readme}", 'patch.os2';
 zip '-ru', "$tmpdir1/$zip{readme}", 'patches.zip';
 
+print "chdir $script_exe_dir\n";
 chdir $script_exe_dir or die "cd: $!";
 zip '-u', "$tmpdir1/$zip{utilits}", @scripts;
 zip '-u', "$tmpdir1/$zip{execs}", 'perl.exe', 'perl__.exe', 'perl___.exe', 'perl.ico', 'perl__.ico';
 zip '-u', "$tmpdir1/$zip{aout}", 'perl_.exe';
-chdir '../dll' or die "cd: $!";
+chdir '../dll' or die "cd: $script_exe_dir/../dll: $!";
 zip '-u', "$tmpdir1/$zip{execs}", "$dllname.dll";
 
-($name,$path,$suffix) = fileparse($Config{sh});
+my ($name,$path,$suffix) = fileparse($Config{sh});
 
 chdir $path or die "cd: $!";
 zip '-u', "$tmpdir1/$zip{sh}", "$name$suffix";
-zip '-uj', "$tmpdir1/$zip{inf}", "$bookdir/perl.inf";
+zip '-uj', "$tmpdir1/$zip{inf}", @bookfiles;
 
 my $cnt = 1;
 
@@ -239,14 +259,15 @@ sub process {
     dirid => $dirid{$file};
   close PKG or die "close: $!";
   #system 'rm', '-rf', "$tmpdir/unzip" and die "rm: $?, $!"; # Does not work
-  system 'rm', '-rf', "$tmpdir/unzip/*" and die "rm: $?, $!"; # Does work
+  hard_rm_recursive <$tmpdir/unzip/*>; # Does work
   rmdir "$tmpdir/unzip" and warn "rmdir: $!"; # Does work
   $cnt++;
   print STDOUT "ok $cnt\n";
   return 1;
 }
 
-$p_version = $] ;
+my $p_version = $] ;			# Something like 5.008001 ==> 050801
+$p_version =~ s/(\.\d\d\d)0(\d\d)$/$1$2/ or die "Bad version string";
 $p_version =~ s/^5\.0/05/ or die "Bad version string";
 
 open ICF, ">$tmpdir1/Perl.ICF" or die "open: $!";
@@ -269,7 +290,9 @@ EOC
 
 close ICF or die "close: $!";
 
-for $fileid ('Perl', keys %zip) {
+my (%size, %date, %time);
+
+for my $fileid ('Perl', keys %zip) {
   if (-f "$tmpdir1/$fileid.PKG") {
     ($size{$fileid}, $date{$fileid}, $time{$fileid})
       = size_date_time_pkg("$tmpdir1/$fileid.PKG");
@@ -283,16 +306,16 @@ open PKG, ">$tmpdir1/Perl.pkg" or die "open: $!";
 my $manglepath = uc $perllibdir;
 $manglepath =~ s,/,\\,g ;
 
-$configsub_lib = "";
-$configpm = $INC{'Config.pm'};
+my $configsub_lib = "";
+my $configpm = $INC{'Config.pm'};
 $configpm =~ s/^\L\Q$perllibdir/%EPFIFILEDIR%/o
   or die "s '$perllibdir' in '$configpm':";
 
-@keys = grep $Config{$_} =~ m,^\Q$perllibdir\E[\'/],o , keys %Config;
-foreach $key (@keys) {
-  $value = $Config{$key};
+my @keys = grep $Config{$_} =~ m,^\Q$perllibdir\E[\'/],o , keys %Config;
+foreach my $key (@keys) {
+  my $value = $Config{$key};
   $value =~ s/\Q$perllibdir/%EPFIFILEDIR%/o or die "s:" ;
-  $configsub_lib .= <<EOS if 0;	# Not working anyway
+  my $configsub_lib .= <<EOS if 0;	# Not working anyway
 
 UPDATECONFIG
   NAME = $configpm,
@@ -592,7 +615,7 @@ COMPONENT
    REQUIRES    = 'INSFIRST DELLAST',
    DISPLAY     = 'YES',
    DESCRIPTION = 'Libraries from the standard distribution + OS/2 specific libraries',
-   SIZE        = '2200000'
+   SIZE        = '17000000'
 
 * Write where it is installed
 FILE
@@ -645,7 +668,7 @@ COMPONENT
    REQUIRES    = 'INSFIRST DELLAST',
    DISPLAY     = 'YES',
    DESCRIPTION = 'Executables for Perl-related utilities: conversion to Perl from different formats, autogeneration of modules, documentation tools',
-   SIZE        = '600000'
+   SIZE        = '2100000'
 
 
 * Write where it is installed
@@ -661,7 +684,7 @@ COMPONENT
    REQUIRES    = 'INSFIRST DELLAST',
    DISPLAY     = 'YES',
    DESCRIPTION = 'Assortment of perl modules which are not included in the standard distribution, but are very useful.',
-   SIZE        = '1500000'
+   SIZE        = '15000000'
 
 
 * Write where it is installed
@@ -732,7 +755,7 @@ COMPONENT
    REQUIRES    = 'INSFIRST DELLAST',
    DISPLAY     = 'YES',
    DESCRIPTION = 'Perl headers and link libraries which are needed for new modules which require compilation. Both static linking and dynamic linking is supported.',
-   SIZE        = '2000000'
+   SIZE        = '13000000'
 
 
 INCLUDE
@@ -743,7 +766,7 @@ COMPONENT
    REQUIRES    = 'INSFIRST DELLAST',
    DISPLAY     = 'YES',
    DESCRIPTION = 'Executable for a.out-style-compiled Perl. Only this perl executable can be run under DOS and Win*, but it cannot load dynamically-loadable modules. This executable has many modules statically-linked-in.',
-   SIZE        = '1000000'
+   SIZE        = '6000000'
 
 
 INCLUDE
@@ -754,7 +777,7 @@ COMPONENT
    REQUIRES    = 'INSFIRST DELLAST',
    DISPLAY     = 'YES',
    DESCRIPTION = 'Documentation for Perl in OS/2-specific format. One may read it by giving a command "view perl logo", or "view perl topic_name" (without quotes)',
-   SIZE        = '3100000'
+   SIZE        = '12100000'
 
 
 INCLUDE
@@ -778,7 +801,7 @@ COMPONENT
    REQUIRES    = 'INSFIRST DELLAST',
    DISPLAY     = 'YES',
    DESCRIPTION = '"manual pages" for Perl. One needs to have man installed to use perl documentation in this form.',
-   SIZE        = '2500000'
+   SIZE        = '7500000'
 
 
 * Write where it is installed
@@ -801,7 +824,7 @@ COMPONENT
    REQUIRES    = 'INSFIRST DELLAST',
    DISPLAY     = 'YES',
    DESCRIPTION = '"manual pages" for perl modules. One needs to have man installed to use perl documentation in this form.',
-   SIZE        = '2100000'
+   SIZE        = '9100000'
 
 * Write where it is installed
 FILE
@@ -823,7 +846,7 @@ COMPONENT
    REQUIRES    = 'INSFIRST DELLAST',
    DISPLAY     = 'YES',
    DESCRIPTION = 'The "source form" for perl documentation. This form is human-readable, and there are numerous converters to different other forms, including HTML, MAN, INFO, INF, plain-text, PDF and so on. Needed for -Mdiagnostics and splain.',
-   SIZE        = '1600000'
+   SIZE        = '5600000'
 
 * Write where it is installed
 FILE
@@ -902,7 +925,7 @@ FILE
 EOP
 ;
 
-for $fileid ('Perl', keys %zip) {
+for my $fileid ('Perl', keys %zip) {
   print PKG <<EOP;
 FILE
    VOLUME        = 'PROD001',
@@ -993,17 +1016,19 @@ close DSC or die "close: $!";
 # shell?  => AUX4        (startsh?)
 # pods are not reflected in Config.pm.
 
-@dirkeys = qw(privlib sitelib man1dir man3dir bin);
+my @dirkeys = qw(privlib sitelib man1dir man3dir bin);
+my %dirs;
 @dirs{@dirkeys} = @Config{@dirkeys};
 ($dirs{shell} = $Config{sh}) =~ s,/[^/]+$,,;
 ($dirs{emx} = $Config{libemx}) =~ s,/[^/]+$,,;
 
-%editkeys  = ();
+my %editkeys  = ();
+my %change_from;
 
-for $key (keys %Config) {
+for my $key (keys %Config) {
   my ($oldl, $l, $good) = (-1);
   # Find the longest subkey which starts key
-  for $subkey (keys %dirs) {
+  for my $subkey (keys %dirs) {
     if (index($Config{$key}, $dirs{$subkey}) == 0 and length $dirs{$subkey} > $oldl) {
       $oldl = length $dirs{$subkey};
       $good = $subkey;
@@ -1104,12 +1129,12 @@ print PL <<EOP;
   \$sitelibtail = '$sitelibtail';	# Hardwired during creation
 EOP
 ;  
-for $key (keys %dirs) {
+for my $key (keys %dirs) {
   print PL <<EOP;
   \$dirs{$key} = '$dirs{$key}';	# Hardwired during creation
 EOP
 }
-for $key (keys %change_from) {
+for my $key (keys %change_from) {
   print PL <<EOP;
   \$change_from{$key} = '$change_from{$key}';	# Hardwired during creation
 EOP

@@ -4,3 +4,4 @@ Makefile.PL
 SoftInstaller.pm
 TODO
 test.pl
+META.yml                                 Module meta-data (added by MakeMaker)

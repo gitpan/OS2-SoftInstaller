@@ -32,3 +32,15 @@ Revision history for Perl extension OS2::SoftInstaller.
 	Un-hardwire $shelldrive and $perllibdir.
 	Maybe will be able to remove tmp working dir.
 	A lot of error detection/report added to edit_cfg.cmd
+
+0.08
+	Un-hardwire remaining directories: $bookdir, $emxdir, $scriptdir.
+	Un-hardwire DLL name.
+	use strict.
+	Do not use rm
+	PODs are in a subdirectory now (fix the install scripts?)
+	Add pfind to the list of installed scripts.
+0.0.9
+	Autofind all the directories.
+	Fix the y2k bug (dates like 1031011 for 2003-10-11).
+	Sizes of components updated to the 5.8.2 values.
