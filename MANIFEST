@@ -2,4 +2,5 @@ Changes
 MANIFEST
 Makefile.PL
 SoftInstaller.pm
+TODO
 test.pl

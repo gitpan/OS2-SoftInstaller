@@ -11,8 +11,9 @@ require Exporter;
 # Do not simply export all your public functions/methods/constants.
 @EXPORT = qw(
 	     make_pkg
+	     size_date_time_pkg
 	    );
-$VERSION = '0.01';
+$VERSION = '0.04';
 
 
 # Preloaded methods go here.
@@ -20,13 +21,27 @@ use Config '%Config';
 use File::Find 'find';
 use strict;
 
+sub size_date_time_pkg {
+    my $file = shift;
+    my $time = $^T - 24 * 60 * 60 * (-M $file) ;
+    my ($sec,$min,$hour,$mday,$mon,$year,$wday,$yday,$isdst) = localtime $time;
+    my $yy = sprintf('%02d', $year);
+    my $mm = sprintf('%02d', $mon + 1);
+    my $dd = sprintf('%02d', $mday);
+    my $hh = sprintf('%02d', $hour);
+    my $mn = sprintf('%02d', $min);
+    my $ss = sprintf('%02d', $sec);
+    return (-s _, "$yy$mm$dd", "$hh$mn");
+}
+
 sub make_pkg {
   my %args = @_;
-  my ($toplevel, $zipfile, $packid, $nozip, $exclude, $dirid) = 
-    @args{qw(toplevel zipfile packid nozip exclude dirid)};
+  my ($toplevel, $zipfile, $packid, $nozip, $exclude, $dirid, $strip) = 
+    @args{qw(toplevel zipfile packid nozip exclude dirid strip)};
+  $strip ||= '';
   $toplevel =~ s,\\,/,g ;
   $toplevel =~ s,/$,, ;
-  my $toplevelq = "\Q$toplevel/";
+  my $toplevelq = "\Q$toplevel/$strip";
   my (%seen, %out, %duplicates, %seen_duplicates, $file);
   unless (defined $packid) {
     ($packid) = ($zipfile =~ /([\w.]+)\./);
@@ -34,7 +49,7 @@ sub make_pkg {
   }
   
 # SOURCE ID PACKID keywords do not take variable substitution:
-#  print <#<EOPT if defined $packtoken;
+#  print <<EOPT if defined $packtoken;
 
 #FILE
 #  EXIT = 'setvar $packtoken=$packtoken'
@@ -52,23 +67,19 @@ sub make_pkg {
 
   my $wanted = sub {
     -f or return;
-    my $time = $^T - 24 * 60 * 60 * (-M $_) ;
-    my ($sec,$min,$hour,$mday,$mon,$year,$wday,$yday,$isdst) = localtime $time;
-    my $yy = sprintf('%02d', $year);
-    my $mm = sprintf('%02d', $mon + 1);
-    my $dd = sprintf('%02d', $mday);
-    my $hh = sprintf('%02d', $hour);
-    my $mn = sprintf('%02d', $min);
-    my $ss = sprintf('%02d', $sec);
+    my ($size, $date, $time) = size_date_time_pkg($_);
     my $relname = $File::Find::name;
-    $relname =~ s/^$toplevelq//;	# Top directory does not match, but is skipped by -f
-    my $size = -s _;
+    $relname =~ s/^$toplevelq// 
+      or die "Cannot find `^$toplevelq' in `$relname'";	# Top directory does not match, but is skipped by -f
     my ($shortname) = ($relname =~ m,([^/]+)$, );
     $seen{ lc $shortname }++;
+    $out{$relname} = ($relname =~ /\.(exe|dll)$/i) ? <<EOI : '' ;
+  REPLACEINUSE = 'D I R U',
+EOI
     
-    $out{$relname} = <<EOO;
-  DATE = $yy$mm$dd,
-  TIME = $hh$mn,
+    $out{$relname} .= <<EOO;
+  DATE = $date,
+  TIME = $time,
   SIZE = $size,
   PWSPATH = '$dirid'
 EOO
@@ -124,7 +135,7 @@ EOP
 FILE
   PWS = '$file',
   SOURCE = 'DRIVE: $zipfile',
-  UNPACK = '%UNZIP% %EPFICURUPS% %UNZIP_D% %EPFICURUPDIR% $file',
+  UNPACK = '%UNZIP% %EPFICURUPS% %UNZIP_D% %EPFICURUPDIR% $strip$file',
 $out{$file}
 EOP
   }
@@ -145,14 +156,21 @@ packages for IBM's Software Installer.
 =head1 SYNOPSIS
 
   use OS2::SoftInstaller;
-  open PKG, 'my.pkg';
+  open PKG, '>my.pkg';
   select PKG;
   make_pkg toplevel => '.', zipfile => 'my.zip', packid => 'myzip', 
-    nozip => 0, exclude => undef, dirid => 'FILE';
+    nozip => 0, exclude => undef, dirid => 'FILE', strip => 'emx/';
   select STDOUT;
   close PKG;
 
 =head1 DESCRIPTION
+
+=head2 I<size_date_time_pkg(name)>
+
+Takes file name, returns an array C<($size, $date,$time)>, suitable for
+C<SIZE>, C<DATE>, and C<TIME> entries of SoftInstaller.
+
+=head2 I<make_pkg(...)>
 
 The function make_pkg() takes a hash-like list of arguments. The
 recognized keys are:
@@ -184,6 +202,13 @@ package file.
 =item dirid
 
 id of the directory to install to (eg, FILE or AUX7).
+
+=item strip
+
+prefix in all the files in the ZIP file which should be removed. It is
+supposed that the default value for the directory to install to (eg,
+FILE or AUX7) already contains this prefix. (Useful to make the ZIP
+file appropriate for manual install as well.)
 
 =back
 

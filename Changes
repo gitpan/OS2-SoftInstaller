@@ -3,3 +3,15 @@ Revision history for Perl extension OS2::SoftInstaller.
 0.01  Thu Sep 12 08:07:27 1996
 	- original version; created by h2xs 1.16
 
+0.02  96/09/14 02:03:05 ilya
+	REPLACEINUSE generated for .exe and .dll.
+	size_date_time coded.
+
+0.03
+	Test uses short names for subpackages (since tmp drive may be FAT).
+	PERL_SHDIR goof removed.
+
+0.04
+	Add an object for CPAN getter.
+	Path for .inf file corrected.
+	plINSTAL.zip autocreated.
